@@ -1,5 +1,6 @@
-hset metadata_items hat-001 '{"id":"hat-001","type":"Hat","name":"Wizard Cap","rarity":"Common","level":1}'
+hset metadata_items hat-001 '{"id":"hat-001","type":"Hat","name":"Wizard Cap","rarity":"Rare","level":3}'
 hset metadata_items hat-002 '{"id":"hat-002","type":"Hat","name":"Party Crown","rarity":"Rare","level":2}'
-hset metadata_items pet-001 '{"id":"pet-001","type":"Pet","name":"Pixel Cat","rarity":"Epic","level":1,"abilities":["purr","scratch"]}'
+hset metadata_items pet-001 '{"id":"pet-001","type":"Pet","name":"Pixel Cat","rarity":"Legendary","level":5,"abilities":["purr","scratch","pounce"]}'
+hset metadata_items hat-003 '{"id":"hat-003","type":"Hat","name":"Dragon Helm","rarity":"Legendary","level":5}'
 
-set metadata_voxel_props '{"props":[{"itemIds":["028977c5"],"isEditable":true,"size":"2,1,2.5"},{"itemIds":["adfc7f5c"],"isEditable":true,"size":"1,1.5,1"}]}'
+set metadata_voxel_props '{"props":[{"itemIds":["028977c5"],"isEditable":true,"size":"2,1,2.5"},{"itemIds":["adfc7f5c"],"isEditable":true,"size":"1,1.5,1"},{"itemIds":["new-item"],"isEditable":false,"size":"3,3,3"}]}'
