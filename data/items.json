@@ -3,8 +3,8 @@
     "id": "hat-001",
     "type": "Hat",
     "name": "Wizard Cap",
-    "rarity": "Common",
-    "level": 1
+    "rarity": "Rare",
+    "level": 3
   },
   "hat-002": {
     "id": "hat-002",
@@ -17,9 +17,9 @@
     "id": "pet-001",
     "type": "Pet",
     "name": "Pixel Cat",
-    "rarity": "Epic",
-    "level": 1,
-    "abilities": ["purr", "scratch"]
+    "rarity": "Legendary",
+    "level": 5,
+    "abilities": ["purr", "scratch", "pounce"]
   },
   "prop-001": {
     "id": "prop-001",
@@ -27,5 +27,20 @@
     "name": "Magic Desk",
     "rarity": "Common",
     "level": 1
+  },
+  "hat-003": {
+    "id": "hat-003",
+    "type": "Hat",
+    "name": "Dragon Helm",
+    "rarity": "Legendary",
+    "level": 5
+  },
+  "pet-002": {
+    "id": "pet-002",
+    "type": "Pet",
+    "name": "Robo Dog",
+    "rarity": "Epic",
+    "level": 3,
+    "abilities": ["fetch", "guard"]
   }
 }
