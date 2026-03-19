@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "seasons": {
+    "current": 28,
+    "rewards": {
+      "xpMultiplier": 1.0,
+      "coinBonus": 0
+    }
+  },
+  "matchmaking": {
+    "maxWaitTime": 30,
+    "minPlayers": 2,
+    "maxPlayers": 6,
+    "skillRange": 200
+  },
+  "features": {
+    "battles": true,
+    "tournaments": false,
+    "trading": false,
+    "guilds": false
+  }
+}
