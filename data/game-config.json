@@ -1,0 +1,24 @@
+{
+  "name": "Boddle Math Game",
+  "version": "2.5.0",
+  "settings": {
+    "difficulty": "medium",
+    "maxPlayers": 30,
+    "timeLimit": 60,
+    "features": {
+      "battles": true,
+      "rewards": true,
+      "leaderboard": false
+    }
+  },
+  "levels": [
+    { "id": 1, "name": "Addition Basics", "minScore": 0 },
+    { "id": 2, "name": "Subtraction Fun", "minScore": 100 },
+    { "id": 3, "name": "Multiply Madness", "minScore": 250 }
+  ],
+  "metadata": {
+    "createdBy": "admin",
+    "lastUpdated": "2026-01-15T10:30:00Z",
+    "tags": ["math", "education", "game"]
+  }
+}

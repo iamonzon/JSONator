@@ -1,0 +1,118 @@
+name: JSON Diff Viewer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.json'
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+
+jobs:
+  diff-viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Generate diff data
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          HEAD_REF="${{ github.event.pull_request.head.sha }}"
+
+          OUT_DIR="diff-output/pr/${PR_NUM}"
+          mkdir -p "$OUT_DIR"
+
+          # Find changed JSON files
+          CHANGED=$(git diff --name-only "$BASE_REF" "$HEAD_REF" -- '*.json')
+
+          if [ -z "$CHANGED" ]; then
+            echo "No JSON files changed"
+            exit 0
+          fi
+
+          echo "Changed JSON files:"
+          echo "$CHANGED"
+
+          # Build file list for manifest
+          FILES_JSON="["
+          FIRST=true
+
+          while IFS= read -r filepath; do
+            SAFE_NAME=$(echo "$filepath" | tr '/' '_')
+
+            # Get base version (may not exist if file is new)
+            git show "${BASE_REF}:${filepath}" > "$OUT_DIR/${SAFE_NAME}.base.json" 2>/dev/null || echo "{}" > "$OUT_DIR/${SAFE_NAME}.base.json"
+
+            # Get head version (may not exist if file is deleted)
+            git show "${HEAD_REF}:${filepath}" > "$OUT_DIR/${SAFE_NAME}.head.json" 2>/dev/null || echo "{}" > "$OUT_DIR/${SAFE_NAME}.head.json"
+
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              FILES_JSON="$FILES_JSON,"
+            fi
+            FILES_JSON="$FILES_JSON{\"path\":\"$filepath\",\"key\":\"$SAFE_NAME\"}"
+          done <<< "$CHANGED"
+
+          FILES_JSON="$FILES_JSON]"
+
+          # Write manifest
+          cat > "$OUT_DIR/manifest.json" <<MANIFEST
+          {
+            "prNumber": $PR_NUM,
+            "prTitle": "$PR_TITLE",
+            "baseRef": "${{ github.event.pull_request.base.ref }}",
+            "headRef": "${{ github.event.pull_request.head.ref }}",
+            "files": $FILES_JSON
+          }
+          MANIFEST
+
+          # Copy viewer
+          cp viewer/index.html "$OUT_DIR/index.html"
+
+          echo "Generated diff data for PR #$PR_NUM"
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./diff-output
+          destination_dir: .
+          keep_files: true
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const repo = context.repo;
+            const viewerUrl = `https://${repo.owner}.github.io/${repo.repo}/pr/${prNumber}/`;
+
+            // Check for existing comment to update
+            const comments = await github.rest.issues.listComments({
+              ...repo,
+              issue_number: prNumber,
+            });
+            const botComment = comments.data.find(c =>
+              c.user.type === 'Bot' && c.body.includes('JSONator Diff Viewer')
+            );
+
+            const body = `### 🔍 JSONator Diff Viewer\n\n**[View JSON changes →](${viewerUrl})**\n\nThis preview updates automatically when the PR is updated.`;
+
+            if (botComment) {
+              await github.rest.issues.updateComment({ ...repo, comment_id: botComment.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...repo, issue_number: prNumber, body });
+            }
