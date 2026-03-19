@@ -1,24 +1,30 @@
 {
   "name": "Boddle Math Game",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "settings": {
-    "difficulty": "medium",
-    "maxPlayers": 30,
-    "timeLimit": 60,
+    "difficulty": "hard",
+    "maxPlayers": 50,
+    "timeLimit": 90,
+    "soundEnabled": true,
     "features": {
       "battles": true,
       "rewards": true,
-      "leaderboard": false
+      "leaderboard": true,
+      "achievements": true,
+      "tournaments": false
     }
   },
   "levels": [
     { "id": 1, "name": "Addition Basics", "minScore": 0 },
     { "id": 2, "name": "Subtraction Fun", "minScore": 100 },
-    { "id": 3, "name": "Multiply Madness", "minScore": 250 }
+    { "id": 3, "name": "Multiply Madness", "minScore": 250 },
+    { "id": 4, "name": "Division Discovery", "minScore": 400 },
+    { "id": 5, "name": "Fraction Frenzy", "minScore": 600 }
   ],
   "metadata": {
     "createdBy": "admin",
-    "lastUpdated": "2026-01-15T10:30:00Z",
-    "tags": ["math", "education", "game"]
+    "lastUpdated": "2026-03-19T14:00:00Z",
+    "tags": ["math", "education", "game", "competitive"],
+    "reviewedBy": "team-lead"
   }
 }
