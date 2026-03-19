@@ -1,0 +1,7 @@
+{
+  "prNumber": 2,
+  "prTitle": "Bump to v3.0.0 — new levels, features, and settings",
+  "baseRef": "main",
+  "headRef": "test/update-game-config",
+  "files": [{"path":"data/game-config.json","key":"data_game-config.json"}]
+}
