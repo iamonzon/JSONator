@@ -1,0 +1,7 @@
+{
+  "prNumber": 1,
+  "prTitle": "Add Dragon Helm, Robo Dog and upgrade existing items",
+  "baseRef": "main",
+  "headRef": "test/add-and-modify-items",
+  "files": [{"path":"data/items.json","key":"data_items.json"}]
+}
