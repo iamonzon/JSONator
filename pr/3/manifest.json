@@ -1,0 +1,7 @@
+{
+  "prNumber": 3,
+  "prTitle": "Upgrade items and update voxel props (Redis format)",
+  "baseRef": "main",
+  "headRef": "test/redis-changes",
+  "files": [{"path":"scripts/metadata_items","key":"scripts_metadata_items"}]
+}

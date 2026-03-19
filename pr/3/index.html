@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSONator — Diff Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1f2328; }
+.header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #d1d9e0; }
+.header h1 { font-size: 18px; color: #0969da; font-weight: 600; }
+.header p { font-size: 13px; color: #636c76; margin-top: 4px; }
+.file-tabs { display: flex; gap: 4px; padding: 8px 24px; background: #fff; border-bottom: 1px solid #d1d9e0; }
+.file-tab { padding: 6px 14px; border: 1px solid #d1d5da; border-radius: 6px; background: #fff; font-size: 13px; color: #57606a; cursor: pointer; }
+.file-tab:hover { background: #f0f0f0; }
+.file-tab.active { background: #0969da; color: #fff; border-color: #0969da; font-weight: 600; }
+.diff-wrap { display: flex; height: calc(100vh - 120px); padding: 12px; gap: 0; }
+.panel { flex: 1; display: flex; flex-direction: column; border: 1px solid #d1d9e0; border-radius: 6px; overflow: hidden; background: #fff; min-width: 0; }
+.panel-header { padding: 8px 12px; background: #f6f8fa; border-bottom: 1px solid #d1d9e0; font-weight: 600; font-size: 13px; }
+.panel-scroll { flex: 1; overflow: auto; padding: 4px 0; }
+.controls { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 8px; min-width: 120px; }
+.badge { background: #0969da; color: #fff; font-weight: 700; font-size: 18px; border-radius: 12px; padding: 2px 10px; min-width: 32px; text-align: center; }
+.badge-label { font-size: 12px; color: #636c76; }
+.toggle label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #636c76; cursor: pointer; }
+.legend { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #636c76; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.swatch { width: 12px; height: 12px; border-radius: 2px; }
+.swatch-added { background: #e6ffec; border: 1px solid #ccffd8; }
+.swatch-removed { background: #ffebe9; border: 1px solid #ffd7d5; }
+.swatch-modified { background: #fff8c5; border: 1px solid #ffedb3; }
+/* Tree node styles */
+.node { font-family: 'SF Mono', Consolas, Monaco, Menlo, monospace; font-size: 13px; line-height: 22px; }
+.node-row { display: flex; align-items: center; cursor: pointer; user-select: none; border-radius: 2px; }
+.node-row:hover { background: rgba(0,0,0,0.04); }
+.node-leaf { display: flex; align-items: center; }
+.node-footer { color: rgba(0,0,0,0.38); }
+.expand { display: inline-flex; width: 20px; height: 22px; align-items: center; justify-content: center; border: none; background: none; cursor: pointer; color: rgba(0,0,0,0.38); flex-shrink: 0; padding: 0; }
+.expand:hover { color: #1a1a1a; }
+.caret { transition: transform 0.1s; }
+.caret.open { transform: rotate(90deg); }
+.key { color: #1a1a1a; }
+.index { color: rgba(0,0,0,0.38); }
+.sep { color: rgba(0,0,0,0.38); margin: 0 4px 0 2px; }
+.bracket { color: rgba(0,0,0,0.38); }
+.tag { display: inline-block; padding: 0 4px; border-radius: 2px; font-size: 80%; background: rgba(0,0,0,0.2); color: #fff; line-height: 1.4; }
+.tag.dim { opacity: 0.7; }
+.val-string { color: #008000; }
+.val-number { color: #ee422e; }
+.val-boolean { color: #ff8c00; }
+.val-null { color: #004ed0; }
+.diff-added > .node-row, .diff-added > .node-leaf { background: #e6ffec; }
+.diff-removed > .node-row, .diff-removed > .node-leaf { background: #ffebe9; }
+.diff-modified > .node-row, .diff-modified > .node-leaf { background: #fff8c5; }
+.diff-ancestor > .node-row { border-left: 3px solid #e8a735; background: rgba(255,237,179,0.15); }
+.loading { padding: 40px; text-align: center; color: #636c76; }
+.error { padding: 40px; text-align: center; color: #d1242f; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 id="title">JSONator — Diff Viewer</h1>
+  <p id="subtitle">Loading...</p>
+</div>
+<div id="file-tabs" class="file-tabs" style="display:none"></div>
+<div class="diff-wrap" id="diff-wrap">
+  <div class="loading" id="loading">Loading diff data...</div>
+</div>
+
+<script>
+// --- Structural Diff ---
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null || typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (Array.isArray(b)) return false;
+  const ak = Object.keys(a).sort(), bk = Object.keys(b).sort();
+  if (ak.length !== bk.length) return false;
+  return ak.every((k, i) => k === bk[i] && deepEqual(a[k], b[k]));
+}
+
+function structuralDiff(left, right) {
+  const changes = new Map();
+  function mark(val, ptr, type) {
+    changes.set(ptr, type);
+    if (val && typeof val === 'object') {
+      if (Array.isArray(val)) val.forEach((v, i) => mark(v, ptr + '/' + i, type));
+      else Object.keys(val).forEach(k => mark(val[k], ptr + '/' + esc(k), type));
+    }
+  }
+  function esc(s) { return String(s).replace(/~/g, '~0').replace(/\//g, '~1'); }
+  function diff(l, r, ptr) {
+    if (l === r || deepEqual(l, r)) return;
+    const lo = l && typeof l === 'object' && !Array.isArray(l);
+    const ro = r && typeof r === 'object' && !Array.isArray(r);
+    if (lo && ro) {
+      const keys = new Set([...Object.keys(l), ...Object.keys(r)]);
+      for (const k of keys) {
+        const cp = ptr + '/' + esc(k);
+        if (!(k in l)) mark(r[k], cp, 'added');
+        else if (!(k in r)) mark(l[k], cp, 'removed');
+        else diff(l[k], r[k], cp);
+      }
+      return;
+    }
+    if (Array.isArray(l) && Array.isArray(r)) {
+      for (let i = 0; i < Math.max(l.length, r.length); i++) {
+        const cp = ptr + '/' + i;
+        if (i >= l.length) mark(r[i], cp, 'added');
+        else if (i >= r.length) mark(l[i], cp, 'removed');
+        else diff(l[i], r[i], cp);
+      }
+      return;
+    }
+    changes.set(ptr, 'modified');
+  }
+  if (left === undefined) mark(right, '', 'added');
+  else if (right === undefined) mark(left, '', 'removed');
+  else diff(left, right, '');
+  // Ancestors
+  const ancestors = new Set();
+  for (const p of changes.keys()) {
+    let pos = 0; ancestors.add('');
+    while (true) { const ns = p.indexOf('/', pos + 1); if (ns === -1) break; ancestors.add(p.substring(0, ns)); pos = ns; }
+  }
+  // Top-level changes for count
+  const tops = [];
+  for (const [p, t] of changes) {
+    let has = false, pos = p.length;
+    while (pos > 0) { pos = p.lastIndexOf('/', pos - 1); if (pos < 0) break; const a = p.substring(0, pos) || ''; if (changes.get(a) === t) { has = true; break; } if (pos === 0) break; }
+    if (!has && p !== '' && changes.get('') === t) has = true;
+    if (!has) tops.push(p);
+  }
+  return { changes, ancestors, tops };
+}
+
+function pruneToChanges(base, head) {
+  if (!base || typeof base !== 'object' || Array.isArray(base)) return [base, head];
+  if (!head || typeof head !== 'object' || Array.isArray(head)) return [base, head];
+  const pb = {}, ph = {};
+  const allKeys = new Set([...Object.keys(base), ...Object.keys(head)]);
+  for (const k of allKeys) {
+    if (deepEqual(base[k], head[k])) continue;
+    if (!(k in base)) ph[k] = head[k];
+    else if (!(k in head)) pb[k] = base[k];
+    else { pb[k] = base[k]; ph[k] = head[k]; }
+  }
+  return [pb, ph];
+}
+
+// --- Tree Renderer ---
+function renderTree(container, value, diffResult, expandedPaths) {
+  container.innerHTML = '';
+  if (value == null) { container.innerHTML = '<div class="loading">No data</div>'; return; }
+  renderNode(container, value, '', 0, null, diffResult, expandedPaths);
+}
+
+function renderNode(parent, value, path, level, keyName, dr, expanded) {
+  const isObj = value && typeof value === 'object' && !Array.isArray(value);
+  const isArr = Array.isArray(value);
+  const diffType = dr.changes.get(path) || null;
+  const isAncestor = dr.ancestors.has(path);
+  const cls = diffType === 'added' ? 'diff-added' : diffType === 'removed' ? 'diff-removed' : diffType === 'modified' ? 'diff-modified' : isAncestor ? 'diff-ancestor' : '';
+
+  const div = document.createElement('div');
+  div.className = 'node ' + cls;
+  div.dataset.path = path;
+
+  if (isObj || isArr) {
+    const keys = isArr ? value : Object.keys(value);
+    const count = isArr ? value.length : Object.keys(value).length;
+    const isOpen = expanded.has(path);
+
+    // Header row
+    const row = document.createElement('div');
+    row.className = 'node-row';
+    row.style.paddingLeft = (level * 18) + 'px';
+    row.innerHTML = `<button class="expand"><svg class="caret ${isOpen ? 'open' : ''}" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4z"/></svg></button>` +
+      (keyName !== null ? `<span class="${typeof keyName === 'number' ? 'index' : 'key'}">${keyName}</span><span class="sep">:</span>` : '') +
+      `<span class="bracket">${isArr ? '[' : '{'}</span> <span class="tag ${isOpen ? 'dim' : ''}">${count} ${isArr ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'prop' : 'props')}</span>` +
+      (isOpen ? '' : ` <span class="bracket">${isArr ? ']' : '}'}</span>`);
+    row.onclick = () => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); renderTree(container, rootValue, rootDiff, expanded); };
+    div.appendChild(row);
+
+    if (isOpen) {
+      const children = document.createElement('div');
+      if (isArr) value.forEach((item, i) => renderNode(children, item, path + '/' + i, level + 1, i, dr, expanded));
+      else Object.keys(value).forEach(k => renderNode(children, value[k], path + '/' + esc(k), level + 1, k, dr, expanded));
+      div.appendChild(children);
+      const footer = document.createElement('div');
+      footer.className = 'node-footer';
+      footer.style.paddingLeft = (level * 18 + 20) + 'px';
+      footer.textContent = isArr ? ']' : '}';
+      div.appendChild(footer);
+    }
+  } else {
+    const leaf = document.createElement('div');
+    leaf.className = 'node-leaf';
+    leaf.style.paddingLeft = (level * 18 + 20) + 'px';
+    leaf.innerHTML = (keyName !== null ? `<span class="${typeof keyName === 'number' ? 'index' : 'key'}">${keyName}</span><span class="sep">:</span>` : '') +
+      `<span class="${valClass(value)}">${fmtVal(value)}</span>`;
+    div.appendChild(leaf);
+  }
+  parent.appendChild(div);
+}
+
+function esc(s) { return String(s).replace(/~/g, '~0').replace(/\//g, '~1'); }
+function fmtVal(v) { return v === null ? 'null' : typeof v === 'string' ? JSON.stringify(v) : String(v); }
+function valClass(v) { if (v === null) return 'val-null'; if (typeof v === 'string') return 'val-string'; if (typeof v === 'number') return 'val-number'; if (typeof v === 'boolean') return 'val-boolean'; return ''; }
+
+// Globals for re-render on expand toggle
+let container, rootValue, rootDiff;
+
+// --- Main ---
+let changesOnly = true;
+let allFiles = [];
+let selectedFile = 0;
+
+async function init() {
+  try {
+    const res = await fetch('manifest.json');
+    if (!res.ok) throw new Error('manifest.json not found');
+    const manifest = await res.json();
+
+    document.getElementById('title').textContent = `PR #${manifest.prNumber} — ${manifest.prTitle}`;
+    document.getElementById('subtitle').textContent = `Comparing ${manifest.baseRef} → ${manifest.headRef}`;
+    document.title = `PR #${manifest.prNumber} — ${manifest.prTitle} | JSONator`;
+
+    // Load all files
+    allFiles = await Promise.all(manifest.files.map(async f => {
+      const [baseRes, headRes] = await Promise.all([fetch(f.key + '.base.json'), fetch(f.key + '.head.json')]);
+      return {
+        path: f.path,
+        base: baseRes.ok ? await baseRes.json() : {},
+        head: headRes.ok ? await headRes.json() : {}
+      };
+    }));
+
+    // File tabs
+    if (allFiles.length > 1) {
+      const tabs = document.getElementById('file-tabs');
+      tabs.style.display = 'flex';
+      allFiles.forEach((f, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'file-tab' + (i === 0 ? ' active' : '');
+        btn.textContent = f.path;
+        btn.onclick = () => { selectedFile = i; document.querySelectorAll('.file-tab').forEach((b,j) => b.className = 'file-tab' + (j === i ? ' active' : '')); renderDiff(); };
+        tabs.appendChild(btn);
+      });
+    }
+
+    renderDiff();
+  } catch (e) {
+    document.getElementById('diff-wrap').innerHTML = `<div class="error">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function renderDiff() {
+  const f = allFiles[selectedFile];
+  let left = f.base, right = f.head;
+  if (changesOnly) [left, right] = pruneToChanges(f.base, f.head);
+  const dr = structuralDiff(left, right);
+  const expanded = new Set(['']);
+
+  const wrap = document.getElementById('diff-wrap');
+  wrap.innerHTML = '';
+
+  // Left panel
+  const lp = mkPanel(f.path + ' (base)');
+  const lScroll = lp.querySelector('.panel-scroll');
+  container = lScroll; rootValue = left; rootDiff = dr;
+  renderTree(lScroll, left, dr, expanded);
+
+  // Controls
+  const ctrl = document.createElement('div');
+  ctrl.className = 'controls';
+  ctrl.innerHTML = `<div><span class="badge">${dr.tops.length}</span><span class="badge-label" style="display:block;margin-top:2px">${dr.tops.length === 1 ? 'change' : 'changes'}</span></div>
+    <div class="toggle"><label><input type="checkbox" ${changesOnly ? 'checked' : ''}> Changes only</label></div>
+    <div class="legend"><span class="legend-item"><span class="swatch swatch-added"></span> Added</span><span class="legend-item"><span class="swatch swatch-removed"></span> Removed</span><span class="legend-item"><span class="swatch swatch-modified"></span> Modified</span></div>`;
+  ctrl.querySelector('input').onclick = () => { changesOnly = !changesOnly; renderDiff(); };
+
+  // Right panel
+  const rp = mkPanel(f.path + ' (head)');
+  const rScroll = rp.querySelector('.panel-scroll');
+  // Share expanded state with left panel via closure
+  const renderBoth = () => { renderTree(lScroll, left, dr, expanded); renderTree(rScroll, right, dr, expanded); };
+  container = null; // disable global re-render
+  renderTreeLinked(lScroll, left, dr, expanded, renderBoth);
+  renderTreeLinked(rScroll, right, dr, expanded, renderBoth);
+
+  wrap.appendChild(lp);
+  wrap.appendChild(ctrl);
+  wrap.appendChild(rp);
+
+  // Sync scroll
+  let guard = false;
+  lScroll.onscroll = () => { if (guard) return; guard = true; rScroll.scrollTop = lScroll.scrollTop; requestAnimationFrame(() => guard = false); };
+  rScroll.onscroll = () => { if (guard) return; guard = true; lScroll.scrollTop = rScroll.scrollTop; requestAnimationFrame(() => guard = false); };
+}
+
+function renderTreeLinked(el, value, dr, expanded, rerender) {
+  el.innerHTML = '';
+  if (value == null) { el.innerHTML = '<div class="loading">No data</div>'; return; }
+  renderNodeLinked(el, value, '', 0, null, dr, expanded, rerender);
+}
+
+function renderNodeLinked(parent, value, path, level, keyName, dr, expanded, rerender) {
+  const isObj = value && typeof value === 'object' && !Array.isArray(value);
+  const isArr = Array.isArray(value);
+  const diffType = dr.changes.get(path) || null;
+  const isAncestor = dr.ancestors.has(path);
+  const cls = diffType === 'added' ? 'diff-added' : diffType === 'removed' ? 'diff-removed' : diffType === 'modified' ? 'diff-modified' : isAncestor ? 'diff-ancestor' : '';
+  const div = document.createElement('div');
+  div.className = 'node ' + cls;
+  div.dataset.path = path;
+
+  if (isObj || isArr) {
+    const count = isArr ? value.length : Object.keys(value).length;
+    const isOpen = expanded.has(path);
+    const row = document.createElement('div');
+    row.className = 'node-row';
+    row.style.paddingLeft = (level * 18) + 'px';
+    row.innerHTML = `<button class="expand"><svg class="caret ${isOpen ? 'open' : ''}" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4z"/></svg></button>` +
+      (keyName !== null ? `<span class="${typeof keyName === 'number' ? 'index' : 'key'}">${esc_html(String(keyName))}</span><span class="sep">:</span>` : '') +
+      `<span class="bracket">${isArr ? '[' : '{'}</span> <span class="tag ${isOpen ? 'dim' : ''}">${count} ${isArr ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'prop' : 'props')}</span>` +
+      (isOpen ? '' : ` <span class="bracket">${isArr ? ']' : '}'}</span>`);
+    row.onclick = (e) => { e.stopPropagation(); if (expanded.has(path)) expanded.delete(path); else expanded.add(path); rerender(); };
+    div.appendChild(row);
+
+    if (isOpen) {
+      const children = document.createElement('div');
+      if (isArr) value.forEach((item, i) => renderNodeLinked(children, item, path + '/' + i, level + 1, i, dr, expanded, rerender));
+      else Object.keys(value).forEach(k => renderNodeLinked(children, value[k], path + '/' + esc(k), level + 1, k, dr, expanded, rerender));
+      div.appendChild(children);
+      const footer = document.createElement('div');
+      footer.className = 'node-footer';
+      footer.style.paddingLeft = (level * 18 + 20) + 'px';
+      footer.textContent = isArr ? ']' : '}';
+      div.appendChild(footer);
+    }
+  } else {
+    const leaf = document.createElement('div');
+    leaf.className = 'node-leaf';
+    leaf.style.paddingLeft = (level * 18 + 20) + 'px';
+    leaf.innerHTML = (keyName !== null ? `<span class="${typeof keyName === 'number' ? 'index' : 'key'}">${esc_html(String(keyName))}</span><span class="sep">:</span>` : '') +
+      `<span class="${valClass(value)}">${esc_html(fmtVal(value))}</span>`;
+    div.appendChild(leaf);
+  }
+  parent.appendChild(div);
+}
+
+function esc_html(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function mkPanel(label) {
+  const p = document.createElement('div');
+  p.className = 'panel';
+  p.innerHTML = `<div class="panel-header">${esc_html(label)}</div><div class="panel-scroll"></div>`;
+  return p;
+}
+
+init();
+</script>
+</body>
+</html>
