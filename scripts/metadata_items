@@ -1,5 +1,0 @@
-hset metadata_items hat-001 '{"id":"hat-001","type":"Hat","name":"Wizard Cap","rarity":"Common","level":1}'
-hset metadata_items hat-002 '{"id":"hat-002","type":"Hat","name":"Party Crown","rarity":"Rare","level":2}'
-hset metadata_items pet-001 '{"id":"pet-001","type":"Pet","name":"Pixel Cat","rarity":"Epic","level":1,"abilities":["purr","scratch"]}'
-
-set metadata_voxel_props '{"props":[{"itemIds":["028977c5"],"isEditable":true,"size":"2,1,2.5"},{"itemIds":["adfc7f5c"],"isEditable":true,"size":"1,1.5,1"}]}'
