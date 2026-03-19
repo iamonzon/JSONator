@@ -1,0 +1,7 @@
+{
+  "prNumber": 4,
+  "prTitle": "[Season 29] New items, balance changes, and config updates",
+  "baseRef": "main",
+  "headRef": "feature/season-29-update",
+  "files": [{"path":"scripts/game_config.json","key":"scripts_game_config.json"},{"path":"scripts/metadata_items","key":"scripts_metadata_items"}]
+}

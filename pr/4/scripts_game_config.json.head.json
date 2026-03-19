@@ -1,0 +1,25 @@
+{
+  "version": "1.1.0",
+  "seasons": {
+    "current": 29,
+    "rewards": {
+      "xpMultiplier": 1.5,
+      "coinBonus": 100,
+      "seasonPass": true
+    }
+  },
+  "matchmaking": {
+    "maxWaitTime": 20,
+    "minPlayers": 2,
+    "maxPlayers": 8,
+    "skillRange": 150,
+    "crossPlay": true
+  },
+  "features": {
+    "battles": true,
+    "tournaments": true,
+    "trading": false,
+    "guilds": true,
+    "leaderboards": true
+  }
+}
