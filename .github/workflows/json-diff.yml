@@ -3,8 +3,6 @@ name: JSON Diff Viewer
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - '**/*.json'
 
 permissions:
   contents: write
@@ -21,70 +19,126 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Fetch base branch
         run: git fetch origin ${{ github.event.pull_request.base.ref }}
 
       - name: Generate diff data
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
           BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
           HEAD_REF="${{ github.event.pull_request.head.sha }}"
 
           OUT_DIR="diff-output/pr/${PR_NUM}"
           mkdir -p "$OUT_DIR"
 
-          # Find changed JSON files
-          CHANGED=$(git diff --name-only "$BASE_REF" "$HEAD_REF" -- '*.json')
+          # Find all changed files (any type — JSON, Redis commands, etc.)
+          CHANGED=$(git diff --name-only "$BASE_REF" "$HEAD_REF")
 
           if [ -z "$CHANGED" ]; then
-            echo "No JSON files changed"
+            echo "No files changed"
             exit 0
           fi
 
-          echo "Changed JSON files:"
+          echo "Changed files:"
           echo "$CHANGED"
 
-          # Build file list for manifest
+          # Parser script (handles both JSON and Redis hset/set files)
+          PARSER="tools/parse-file.mjs"
+          if [ ! -f "$PARSER" ]; then
+            echo "Warning: parser not found at $PARSER, using raw file content"
+            PARSER=""
+          fi
+
           FILES_JSON="["
           FIRST=true
+          HAS_FILES=false
 
           while IFS= read -r filepath; do
             SAFE_NAME=$(echo "$filepath" | tr '/' '_')
 
-            # Get base version (may not exist if file is new)
-            git show "${BASE_REF}:${filepath}" > "$OUT_DIR/${SAFE_NAME}.base.json" 2>/dev/null || echo "{}" > "$OUT_DIR/${SAFE_NAME}.base.json"
+            # Get base and head versions
+            BASE_CONTENT=$(git show "${BASE_REF}:${filepath}" 2>/dev/null || echo "")
+            HEAD_CONTENT=$(git show "${HEAD_REF}:${filepath}" 2>/dev/null || echo "")
 
-            # Get head version (may not exist if file is deleted)
-            git show "${HEAD_REF}:${filepath}" > "$OUT_DIR/${SAFE_NAME}.head.json" 2>/dev/null || echo "{}" > "$OUT_DIR/${SAFE_NAME}.head.json"
+            # Parse through the smart parser (detects JSON vs Redis commands)
+            if [ -n "$PARSER" ]; then
+              BASE_JSON=$(echo "$BASE_CONTENT" | node "$PARSER" 2>/dev/null || echo "{}")
+              HEAD_JSON=$(echo "$HEAD_CONTENT" | node "$PARSER" 2>/dev/null || echo "{}")
+            else
+              BASE_JSON="$BASE_CONTENT"
+              HEAD_JSON="$HEAD_CONTENT"
+            fi
+
+            # Skip files that aren't valid JSON after parsing
+            if ! echo "$BASE_JSON" | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))" 2>/dev/null && \
+               ! echo "$HEAD_JSON" | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))" 2>/dev/null; then
+              echo "  Skipping $filepath (not JSON-parseable)"
+              continue
+            fi
+
+            # Skip files with no actual JSON difference
+            if [ "$BASE_JSON" = "$HEAD_JSON" ]; then
+              echo "  Skipping $filepath (no JSON difference after parsing)"
+              continue
+            fi
+
+            echo "  Processing $filepath"
+            echo "$BASE_JSON" > "$OUT_DIR/${SAFE_NAME}.base.json"
+            echo "$HEAD_JSON" > "$OUT_DIR/${SAFE_NAME}.head.json"
+            HAS_FILES=true
 
             if [ "$FIRST" = true ]; then
               FIRST=false
             else
               FILES_JSON="$FILES_JSON,"
             fi
-            FILES_JSON="$FILES_JSON{\"path\":\"$filepath\",\"key\":\"$SAFE_NAME\"}"
+            FILES_JSON="${FILES_JSON}{\"path\":\"$filepath\",\"key\":\"$SAFE_NAME\"}"
           done <<< "$CHANGED"
 
           FILES_JSON="$FILES_JSON]"
 
+          if [ "$HAS_FILES" = false ]; then
+            echo "No JSON-parseable changes found"
+            exit 0
+          fi
+
+          # Escape PR title for JSON
+          PR_TITLE=$(echo '${{ github.event.pull_request.title }}' | sed 's/"/\\"/g')
+
           # Write manifest
-          cat > "$OUT_DIR/manifest.json" <<MANIFEST
+          cat > "$OUT_DIR/manifest.json" <<EOF
           {
             "prNumber": $PR_NUM,
-            "prTitle": "$PR_TITLE",
+            "prTitle": "${PR_TITLE}",
             "baseRef": "${{ github.event.pull_request.base.ref }}",
             "headRef": "${{ github.event.pull_request.head.ref }}",
             "files": $FILES_JSON
           }
-          MANIFEST
+          EOF
 
           # Copy viewer
           cp viewer/index.html "$OUT_DIR/index.html"
 
-          echo "Generated diff data for PR #$PR_NUM"
+          echo ""
+          echo "Generated diff for PR #$PR_NUM"
+
+      - name: Check if diff was generated
+        id: check
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          if [ -f "diff-output/pr/${PR_NUM}/manifest.json" ]; then
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Deploy to GitHub Pages
+        if: steps.check.outputs.has_diff == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -93,6 +147,7 @@ jobs:
           keep_files: true
 
       - name: Comment on PR
+        if: steps.check.outputs.has_diff == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -100,16 +155,20 @@ jobs:
             const repo = context.repo;
             const viewerUrl = `https://${repo.owner}.github.io/${repo.repo}/pr/${prNumber}/`;
 
-            // Check for existing comment to update
             const comments = await github.rest.issues.listComments({
-              ...repo,
-              issue_number: prNumber,
+              ...repo, issue_number: prNumber,
             });
             const botComment = comments.data.find(c =>
               c.user.type === 'Bot' && c.body.includes('JSONator Diff Viewer')
             );
 
-            const body = `### 🔍 JSONator Diff Viewer\n\n**[View JSON changes →](${viewerUrl})**\n\nThis preview updates automatically when the PR is updated.`;
+            const body = [
+              '### JSONator Diff Viewer',
+              '',
+              `**[View JSON changes](${viewerUrl})**`,
+              '',
+              '_Updates automatically when the PR is updated._'
+            ].join('\n');
 
             if (botComment) {
               await github.rest.issues.updateComment({ ...repo, comment_id: botComment.id, body });
